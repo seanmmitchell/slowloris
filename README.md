@@ -1,6 +1,6 @@
 <h1>This project is...</h1>
-<p>A C# based Slow Loris command line tool. As of right now, it only support Slow Loris POST but I plan on adding a GET version later. Slow Loris is a Layer 7 attack on the HTTP and HTTPS protocols that hogs all possible sockets to the webserver.</p>
-<img src="https://i.imgur.com/vaEHxu6.png">
+<p>A C# based Slow Loris command line tool. As of right now, it only support Slow Loris POST but I plan on adding a GET version later. Slow Loris is a Layer 7 attack on the HTTP and HTTPS protocols that hogs all possible sockets to the webserver. Look at the image below that I was lucky to get when testing the tool on my Apache2 server. When trying to refresh after this, all connections were clogged and the server died, but this is the perfect example of the power of this tool!</p>
+<img src="https://i.imgur.com/Tzomtp7.png">
 <br>
 <h1>Current project status is...</h1>
 <h3>Open</h3>
