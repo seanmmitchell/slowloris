@@ -8,6 +8,8 @@
 <h3>Tasks</h3>
 <ul>
 <li>Add GET Slow Loris</li>
+<li>Add Working Multithreading</li>
+<li>Add SSL for Any Port, and Allow Snake Oil Certificates</li>
 </ul>
 <br>
 <h1>Licensing</h1>
