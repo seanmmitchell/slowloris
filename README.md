@@ -7,7 +7,6 @@
 <p>I will continue updating it till I am happy with it!</p>
 <h3>Tasks</h3>
 <ul>
-  <li>Add GET Slow Loris</li>
   <li>Add Working Multithreading</li>
   <li>Allow Snake Oil Certificates for SSL</li>
   <li>Allow custom post params</li>
