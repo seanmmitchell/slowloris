@@ -3,8 +3,8 @@
 <img src="https://i.imgur.com/Tzomtp7.png">
 <br>
 <h1>Current project status is...</h1>
-<h3>Open</h3>
-<p>I will continue updating it till I am happy with it!</p>
+<h3>Closed</h3>
+<p>Below are features I believe this application could use, but I do not have time to implement.</p>
 <h3>Tasks</h3>
 <ul>
   <li>Add Working Multithreading</li>
@@ -16,7 +16,7 @@
 <h3>MIT License</h3>
 
 ```
-Copyright (c) <N/A> <N/A>
+Copyright (c) Sean Mitchell <2020>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
